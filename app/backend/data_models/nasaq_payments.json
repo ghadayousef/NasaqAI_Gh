@@ -1,0 +1,35 @@
+{
+    "title": "nasaq_payments",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "autoincrement": true
+        },
+        "user_id": {
+            "type": "string"
+        },
+        "plan": {
+            "type": "string"
+        },
+        "cycle": {
+            "type": "string"
+        },
+        "amount": {
+            "type": "number"
+        },
+        "currency": {
+            "type": "string"
+        },
+        "stripe_session_id": {
+            "type": "string"
+        },
+        "status": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "user_id",
+        "plan"
+    ]
+}

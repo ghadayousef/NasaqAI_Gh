@@ -1,0 +1,19 @@
+{
+    "title": "nasaq_workspaces",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "autoincrement": true
+        },
+        "user_id": {
+            "type": "string"
+        },
+        "data_json": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "user_id"
+    ]
+}

@@ -1,0 +1,32 @@
+{
+    "title": "nasaq_integrations",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "autoincrement": true
+        },
+        "user_id": {
+            "type": "string"
+        },
+        "provider": {
+            "type": "string"
+        },
+        "account_name": {
+            "type": "string"
+        },
+        "external_id": {
+            "type": "string"
+        },
+        "access_token": {
+            "type": "string"
+        },
+        "status": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "user_id",
+        "provider"
+    ]
+}

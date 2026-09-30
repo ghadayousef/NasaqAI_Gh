@@ -1,0 +1,23 @@
+{
+    "title": "nasaq_usage",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "autoincrement": true
+        },
+        "user_id": {
+            "type": "string"
+        },
+        "month": {
+            "type": "string"
+        },
+        "gens": {
+            "type": "integer"
+        }
+    },
+    "required": [
+        "user_id",
+        "month"
+    ]
+}

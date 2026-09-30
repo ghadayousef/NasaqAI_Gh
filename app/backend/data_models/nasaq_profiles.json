@@ -1,0 +1,46 @@
+{
+    "title": "nasaq_profiles",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "autoincrement": true
+        },
+        "user_id": {
+            "type": "string"
+        },
+        "name": {
+            "type": "string"
+        },
+        "email": {
+            "type": "string"
+        },
+        "phone": {
+            "type": "string"
+        },
+        "company": {
+            "type": "string"
+        },
+        "industry": {
+            "type": "string"
+        },
+        "city": {
+            "type": "string"
+        },
+        "plan": {
+            "type": "string"
+        },
+        "trial_ends": {
+            "type": "string"
+        },
+        "onboarded": {
+            "type": "boolean"
+        },
+        "brand_json": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "user_id"
+    ]
+}
