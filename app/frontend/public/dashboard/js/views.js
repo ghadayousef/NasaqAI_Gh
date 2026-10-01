@@ -659,6 +659,27 @@
   const aiReply = text => (AI_REPLIES.find(([r]) => r.test(text)) || [0, 'أهلين فيك 👋 شكرًا لتواصلك مع ' + App.company.name + '. أكيد بنساعدك — ممكن توضّحلي أكثر شو بتحتاج؟'])[1];
   const QUICK = ['أهلين! كيف بنقدر نساعدك؟ 😊', 'هاي قائمة الأسعار 📋', 'الدوام من 7 الصبح لـ 12 بالليل ⏰', 'موقعنا: رام الله — شارع ركب 📍'];
 
+  const WA_COLORS = ['#3aa6a0','#e27d8f','#d59938','#6b8f71','#4b2f8f','#1f3b5a'];
+  const waId = phone => +String(phone).slice(-9) || Date.now();
+  /* Pulls real WhatsApp conversations from the server and merges them into the inbox. */
+  async function syncWA(){
+    if (!(D.integ && D.integ.wa)) return false;
+    const r = await window.NasaqAuth.api('/api/v1/wa/conversations');
+    const prev = Object.fromEntries(D.conversations.filter(c => c.waPhone).map(c => [c.waPhone, c]));
+    const real = r.items.map((x, i) => {
+      const old = prev[x.phone];
+      const lastSeen = old ? old.messages.length : 0;
+      const newIn = x.messages.slice(lastSeen).filter(m => m.from === 'in').length;
+      return { id:waId(x.phone), waPhone:x.phone, name:x.name || ('+' + x.phone), phone:'+' + x.phone, color:WA_COLORS[i % WA_COLORS.length],
+        status:old ? old.status : 'new', unread:(old ? old.unread : 0) + (IB.sel === waId(x.phone) ? 0 : newIn), online:false,
+        tags:old ? old.tags : ['واتساب'], intent:'—', sentiment:3, orders:0, spent:0, since:'واتساب',
+        summary:old ? old.summary : 'محادثة حقيقية واردة عبر واتساب.', messages:x.messages.map(m => ({ from:m.from, text:m.text, ai:m.ai, at:m.at || new Date().toISOString() })) };
+    });
+    const changed = JSON.stringify(real.map(c => c.messages.length)) !== JSON.stringify(Object.values(prev).map(c => c.messages.length)) || real.length !== Object.keys(prev).length;
+    D.conversations = [...real, ...D.conversations.filter(c => !c.waPhone)];
+    return changed;
+  }
+
   function convList(){
     const list = D.conversations.filter(c => (IB.filter === 'all' || c.status === IB.filter) && (!IB.q || c.name.includes(IB.q) || c.messages.some(m => m.text.includes(IB.q))));
     if (!list.length) return `<div class="empty">${icon('i-search')}<b style="margin-top:10px">ما في نتائج</b></div>`;
@@ -720,6 +741,12 @@
   App.register('inbox', {
     title:'صندوق واتساب', crumb:'صندوق وارد واتساب',
     render(p){
+      if (!D.conversations.length && D.integ && D.integ.wa){
+        return `<div class="page-head"><div><h2>صندوق وارد واتساب</h2><p>رقمك مربوط — بنفحص الرسائل الجديدة كل بضع ثواني.</p></div></div>
+        <div class="card"><div class="empty" style="padding:70px 20px"><div class="empty-ic">${icon('i-wa')}</div><b>بانتظار أول رسالة</b>
+          <p style="max-width:440px;margin:8px auto 18px">ابعت رسالة لرقمك من أي جوال. إذا ما ظهرت، تأكد إنك ضفت رابط الـ Webhook في لوحة Meta من «إعداد الرد التلقائي» بالتكاملات.</p>
+          <a href="#/settings/integrations" class="btn btn-navy">${icon('i-link', 'icon-sm')}إعداد الـ Webhook</a></div></div>`;
+      }
       if (!D.conversations.length){
         return `<div class="page-head"><div><h2>صندوق وارد واتساب</h2><p>محادثات عملاء «${esc(App.company.name)}» بتظهر هون بعد ربط الرقم.</p></div></div>
         <div class="card"><div class="empty" style="padding:70px 20px">
@@ -753,6 +780,13 @@
       </div>`;
     },
     mount(el){
+      if (D.integ && D.integ.wa){
+        let busySync = false;
+        const tick = () => { if (busySync) return; busySync = true; syncWA().then(ch => { if (ch && !document.activeElement?.matches('#ibText')){ App.renderNav(); App.rerender(); } }).catch(() => {}).finally(() => busySync = false); };
+        if (!IB.synced){ IB.synced = true; tick(); }
+        const iv = setInterval(tick, 8000);
+        App.onLeave(() => { clearInterval(iv); IB.synced = false; });
+      }
       const sampleBtn = el.querySelector('#sampleConv');
       if (sampleBtn){
         sampleBtn.onclick = () => {
@@ -810,6 +844,16 @@
         if (a === 'send'){
           const t = ta(), v = t.value.trim();
           if (!v){ App.toast('اكتب رسالة الرد أولًا', 'error'); t.focus(); return; }
+          if (c.waPhone){
+            b.disabled = true;
+            window.NasaqAuth.api('/api/v1/wa/send', 'POST', { phone:c.waPhone, text:v }).then(() => {
+              t.value = ''; autosize();
+              append({ from:'out', text:v, at:new Date().toISOString() }, c);
+              if (c.status === 'new') c.status = 'active';
+              App.toast('انبعت الرد على واتساب ✅', 'success');
+            }).catch(err => App.toast(err.message || 'تعذّر الإرسال', 'error')).finally(() => b.disabled = false);
+            return;
+          }
           t.value = ''; autosize();
           append({ from:'out', text:v, at:new Date().toISOString() }, c);
           if (c.status === 'new') c.status = 'active';
@@ -821,6 +865,14 @@
           b.disabled = true;
           msgs.insertAdjacentHTML('beforeend', '<div class="typing-b" id="ibTyping"><i></i><i></i><i></i></div>');
           scrollDown();
+          if (c.waPhone){
+            window.NasaqAuth.api('/api/v1/wa/ai-reply', 'POST', { phone:c.waPhone }).then(r => {
+              append({ from:'out', text:r.text, at:new Date().toISOString(), ai:true }, c);
+              if (c.status === 'new') c.status = 'active';
+              App.toast('أرسل الـ AI ردًا ذكيًا على واتساب ✅', 'ai');
+            }).catch(err => App.toast(err.message || 'تعذّر الرد الذكي', 'error')).finally(() => { el.querySelector('#ibTyping')?.remove(); b.disabled = false; });
+            return;
+          }
           const to = setTimeout(() => {
             el.querySelector('#ibTyping')?.remove();
             b.disabled = false;

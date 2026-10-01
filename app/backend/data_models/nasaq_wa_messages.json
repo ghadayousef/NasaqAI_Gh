@@ -1,0 +1,39 @@
+{
+    "title": "nasaq_wa_messages",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "integer",
+            "autoincrement": true
+        },
+        "user_id": {
+            "type": "string"
+        },
+        "contact_phone": {
+            "type": "string"
+        },
+        "contact_name": {
+            "type": "string"
+        },
+        "direction": {
+            "type": "string"
+        },
+        "text": {
+            "type": "string"
+        },
+        "ai": {
+            "type": "boolean"
+        },
+        "wa_message_id": {
+            "type": "string"
+        },
+        "status": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "user_id",
+        "contact_phone",
+        "direction"
+    ]
+}

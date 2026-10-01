@@ -572,7 +572,7 @@
         sec('الفواتير', 'بتظهر بعد أول عملية دفع حقيقية.', `<div class="empty" style="padding:22px 8px"><b>ما في فواتير بعد</b></div>`);
     }
     if (tab === 'integrations') return sec('المنصات المرتبطة', 'الربط هون تجريبي على هذا الجهاز، والتحضير لربط Meta الحقيقي.', `<div style="display:grid;gap:12px">${INTEG.map(g => { const linked = !!(D.integ && D.integ[g.id]); return `<div class="integ"><span class="plat lg ${g.cls}">${icon(g.icon)}</span><div class="body"><b>${g.name} ${g.soon ? '<span class="pill p-purple no-dot">قريبًا</span>' : ''}</b><small>${g.desc}</small></div>
-        ${g.soon ? '' : linked ? `<span class="pill p-green">مرتبط</span><button class="btn btn-outline btn-sm" data-icheck="${g.id}">فحص الاتصال</button><button class="btn btn-ghost btn-sm" data-integ="${g.id}">فصل</button>` : `<button class="btn btn-navy btn-sm" data-integ="${g.id}">${icon('i-link', 'icon-sm')}ربط</button>`}</div>`; }).join('')}</div>`);
+        ${g.soon ? '' : linked ? `<span class="pill p-green">مرتبط</span><button class="btn btn-outline btn-sm" data-icheck="${g.id}">فحص الاتصال</button>${g.id === 'wa' ? '<button class="btn btn-gold btn-sm" data-wacfg>إعداد الرد التلقائي</button>' : ''}<button class="btn btn-ghost btn-sm" data-integ="${g.id}">فصل</button>` : `<button class="btn btn-navy btn-sm" data-integ="${g.id}">${icon('i-link', 'icon-sm')}ربط</button>`}</div>`; }).join('')}</div>`);
     if (tab === 'notifications'){
       const rows = [['رسالة واتساب جديدة', 1, 1, 1], ['نشر منشور مجدول', 1, 0, 1], ['اقتراحات الـ AI اليومية', 0, 1, 1], ['تجاوز ميزانية حملة', 1, 1, 1], ['تقرير الأداء الأسبوعي', 1, 0, 0]];
       return sec('قنوات الإشعارات', 'اختر كيف ووين توصلك التنبيهات.', `<table class="table"><thead><tr><th>الحدث</th><th>بريد</th><th>واتساب</th><th>إشعار فوري</th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td>${r.slice(1).map(v => `<td><button class="switch ${v ? 'on' : ''}" data-sw></button></td>`).join('')}</tr>`).join('')}</tbody></table>`);
@@ -707,6 +707,26 @@
               const r = await Auth.api('/integrations', 'POST', { provider:g.id, account_name:m.querySelector('#igName').value, external_id:m.querySelector('#igId').value, access_token:m.querySelector('#igTok').value });
               D.integ = r.integ; App.closeModal(); App.toast(`تم ربط ${g.name}`, 'success'); App.rerender();
             } catch (err){ App.toast(err.message || 'تعذّر الربط', 'error'); }
+          }
+        });
+      });
+      on(el, 'click', '[data-wacfg]', async () => {
+        let cfg;
+        try { cfg = await Auth.api('/api/v1/wa/settings'); } catch (err){ App.toast(err.message || 'تعذّر جلب الإعدادات', 'error'); return; }
+        const hook = location.origin + '/api/v1/wa/webhook';
+        App.modal({
+          title:'استقبال الرسائل والرد التلقائي',
+          sub:'انسخ القيمتين للوحة Meta: WhatsApp ← Configuration ← Webhook، ثم اشترك بحقل messages.',
+          body:`<div class="field"><label>Callback URL</label><div class="row"><input class="input" id="wHook" value="${hook}" dir="ltr" readonly><button class="btn btn-outline" data-cp="wHook">نسخ</button></div></div>
+            <div class="field"><label>Verify token</label><div class="row"><input class="input" id="wTok" value="${cfg.verify_token}" dir="ltr" readonly><button class="btn btn-outline" data-cp="wTok">نسخ</button></div></div>
+            <label class="row" style="gap:10px;margin-top:8px;font-weight:700"><input type="checkbox" id="wAuto" ${cfg.auto_reply ? 'checked' : ''}> رد تلقائي بالـ AI على كل رسالة واردة</label>`,
+          foot:`<button class="btn btn-ghost" data-close>إغلاق</button><button class="btn btn-gold" id="wSave">حفظ</button>`,
+          onMount:m => {
+            m.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => U.copy(m.querySelector('#' + b.dataset.cp).value));
+            m.querySelector('#wSave').onclick = async () => {
+              try { const r = await Auth.api('/api/v1/wa/settings', 'PUT', { auto_reply:m.querySelector('#wAuto').checked }); App.closeModal(); App.toast(r.auto_reply ? 'الرد التلقائي شغّال 🤖' : 'الرد التلقائي موقوف', 'success'); }
+              catch (err){ App.toast(err.message || 'تعذّر الحفظ', 'error'); }
+            };
           }
         });
       });

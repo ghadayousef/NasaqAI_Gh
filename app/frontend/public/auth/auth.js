@@ -23,7 +23,7 @@
 
   /* Async JSON request to the Nasaq API with the Atoms session token. */
   async function api(path, method = 'GET', data, opts = {}){
-    const res = await fetch(API + path, {
+    const res = await fetch((path.startsWith('/api/') ? '' : API) + path, {
       method,
       keepalive:!!opts.keepalive,
       headers:{ 'Content-Type':'application/json', 'App-Host':location.origin, Authorization:`Bearer ${token()}` },

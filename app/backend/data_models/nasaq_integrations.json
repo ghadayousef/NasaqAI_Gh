@@ -23,6 +23,12 @@
         },
         "status": {
             "type": "string"
+        },
+        "verify_token": {
+            "type": "string"
+        },
+        "auto_reply": {
+            "type": "boolean"
         }
     },
     "required": [

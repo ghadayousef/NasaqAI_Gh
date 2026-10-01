@@ -27,6 +27,8 @@ class Nasaq_integrationsData(BaseModel):
     external_id: str = None
     access_token: str = None
     status: str = None
+    verify_token: str = None
+    auto_reply: bool = None
 
 
 class Nasaq_integrationsUpdateData(BaseModel):
@@ -36,6 +38,8 @@ class Nasaq_integrationsUpdateData(BaseModel):
     external_id: Optional[str] = None
     access_token: Optional[str] = None
     status: Optional[str] = None
+    verify_token: Optional[str] = None
+    auto_reply: Optional[bool] = None
 
 
 class Nasaq_integrationsResponse(BaseModel):
@@ -47,6 +51,8 @@ class Nasaq_integrationsResponse(BaseModel):
     external_id: Optional[str] = None
     access_token: Optional[str] = None
     status: Optional[str] = None
+    verify_token: Optional[str] = None
+    auto_reply: Optional[bool] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
