@@ -572,7 +572,7 @@
         sec('الفواتير', 'بتظهر بعد أول عملية دفع حقيقية.', `<div class="empty" style="padding:22px 8px"><b>ما في فواتير بعد</b></div>`);
     }
     if (tab === 'integrations') return sec('المنصات المرتبطة', 'الربط هون تجريبي على هذا الجهاز، والتحضير لربط Meta الحقيقي.', `<div style="display:grid;gap:12px">${INTEG.map(g => { const linked = !!(D.integ && D.integ[g.id]); return `<div class="integ"><span class="plat lg ${g.cls}">${icon(g.icon)}</span><div class="body"><b>${g.name} ${g.soon ? '<span class="pill p-purple no-dot">قريبًا</span>' : ''}</b><small>${g.desc}</small></div>
-        ${g.soon ? '' : linked ? `<span class="pill p-green">مرتبط</span><button class="btn btn-ghost btn-sm" data-integ="${g.id}">فصل</button>` : `<button class="btn btn-navy btn-sm" data-integ="${g.id}">${icon('i-link', 'icon-sm')}ربط</button>`}</div>`; }).join('')}</div>`);
+        ${g.soon ? '' : linked ? `<span class="pill p-green">مرتبط</span><button class="btn btn-outline btn-sm" data-icheck="${g.id}">فحص الاتصال</button><button class="btn btn-ghost btn-sm" data-integ="${g.id}">فصل</button>` : `<button class="btn btn-navy btn-sm" data-integ="${g.id}">${icon('i-link', 'icon-sm')}ربط</button>`}</div>`; }).join('')}</div>`);
     if (tab === 'notifications'){
       const rows = [['رسالة واتساب جديدة', 1, 1, 1], ['نشر منشور مجدول', 1, 0, 1], ['اقتراحات الـ AI اليومية', 0, 1, 1], ['تجاوز ميزانية حملة', 1, 1, 1], ['تقرير الأداء الأسبوعي', 1, 0, 0]];
       return sec('قنوات الإشعارات', 'اختر كيف ووين توصلك التنبيهات.', `<table class="table"><thead><tr><th>الحدث</th><th>بريد</th><th>واتساب</th><th>إشعار فوري</th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${r[0]}</b></td>${r.slice(1).map(v => `<td><button class="switch ${v ? 'on' : ''}" data-sw></button></td>`).join('')}</tr>`).join('')}</tbody></table>`);
@@ -709,6 +709,14 @@
             } catch (err){ App.toast(err.message || 'تعذّر الربط', 'error'); }
           }
         });
+      });
+      on(el, 'click', '[data-icheck]', async b => {
+        const t = b.textContent; b.disabled = true; b.textContent = 'جارٍ الفحص…';
+        try {
+          const r = await Auth.api('/integrations/' + b.dataset.icheck + '/check', 'POST', {});
+          App.toast(r.ok ? `الاتصال شغّال ✅ ${r.detail}` : `الربط لا يعمل ❌ ${r.detail}`, r.ok ? 'success' : 'error', 7000);
+        } catch (err){ App.toast(err.message || 'تعذّر الفحص', 'error'); }
+        b.disabled = false; b.textContent = t;
       });
       on(el, 'click', '[data-invite]', () => {
         const seats = Auth.plan(Auth.current()).seats;

@@ -3,6 +3,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
+import httpx
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -187,6 +188,33 @@ async def disconnect_integration(provider: str, user: UserResponse = Depends(get
         await db.delete(row)
     await db.commit()
     return {"integ": await _integ(db, user.id)}
+
+
+@router.post("/integrations/{provider}/check")
+async def check_integration(provider: str, user: UserResponse = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Verifies stored credentials live against the Meta Graph API."""
+    res = await db.execute(select(Nasaq_integrations).where(
+        Nasaq_integrations.user_id == user.id, Nasaq_integrations.provider == provider))
+    row = res.scalars().first()
+    if not row:
+        await db.commit()
+        raise HTTPException(status_code=404, detail="هذا التكامل غير مربوط")
+    ext_id, tok = row.external_id, row.access_token
+    await db.commit()
+    fields = "display_phone_number,verified_name,quality_rating" if provider == "wa" else "name"
+    try:
+        async with httpx.AsyncClient(timeout=15) as http:
+            r = await http.get(f"https://graph.facebook.com/v21.0/{ext_id}", params={"fields": fields},
+                               headers={"Authorization": f"Bearer {tok}"})
+        body = r.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="تعذّر الوصول لخوادم Meta، جرّب بعد قليل")
+    if r.status_code != 200 or "error" in body:
+        msg = (body.get("error") or {}).get("message", "") if isinstance(body, dict) else ""
+        return {"ok": False, "detail": msg or "رفضت Meta البيانات"}
+    if provider == "wa":
+        return {"ok": True, "detail": f"{body.get('verified_name', '')} — {body.get('display_phone_number', '')}"}
+    return {"ok": True, "detail": body.get("name", "")}
 
 
 async def _integ(db: AsyncSession, user_id: str) -> Dict[str, bool]:
