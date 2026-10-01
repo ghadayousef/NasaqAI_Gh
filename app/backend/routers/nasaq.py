@@ -209,8 +209,30 @@ async def check_integration(provider: str, user: UserResponse = Depends(get_curr
         body = r.json()
     except Exception:
         raise HTTPException(status_code=502, detail="تعذّر الوصول لخوادم Meta، جرّب بعد قليل")
+    if (r.status_code != 200 or "error" in body) and provider == "wa":
+        # The saved ID may be a WhatsApp Business Account ID: look up its phone numbers and auto-correct.
+        try:
+            async with httpx.AsyncClient(timeout=15) as http:
+                r2 = await http.get(f"https://graph.facebook.com/v21.0/{ext_id}/phone_numbers",
+                                    params={"fields": "id,display_phone_number,verified_name"},
+                                    headers={"Authorization": f"Bearer {tok}"})
+            phones = (r2.json() or {}).get("data") if r2.status_code == 200 else None
+        except Exception:
+            phones = None
+        if phones:
+            first = phones[0]
+            res = await db.execute(select(Nasaq_integrations).where(
+                Nasaq_integrations.user_id == user.id, Nasaq_integrations.provider == "wa"))
+            row = res.scalars().first()
+            row.external_id = first["id"]
+            await db.commit()
+            return {"ok": True, "detail": f"صحّحنا المعرّف تلقائيًا إلى Phone Number ID {first['id']} — "
+                                          f"{first.get('verified_name', '')} {first.get('display_phone_number', '')}"}
     if r.status_code != 200 or "error" in body:
         msg = (body.get("error") or {}).get("message", "") if isinstance(body, dict) else ""
+        if "does not exist" in msg or "missing permissions" in msg:
+            msg = ("المعرّف غير صحيح أو الرمز بدون صلاحية عليه. ضع Phone Number ID من WhatsApp ← API Setup "
+                   "(وليس رقم الهاتف أو App ID)، وتأكد أن الرمز فيه whatsapp_business_management و whatsapp_business_messaging.")
         return {"ok": False, "detail": msg or "رفضت Meta البيانات"}
     if provider == "wa":
         return {"ok": True, "detail": f"{body.get('verified_name', '')} — {body.get('display_phone_number', '')}"}
