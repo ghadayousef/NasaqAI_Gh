@@ -39,6 +39,10 @@ class SettingsRequest(BaseModel):
     auto_reply: bool
 
 
+class SubscribeRequest(BaseModel):
+    waba_id: str
+
+
 async def _wa_row(db: AsyncSession, user_id: str) -> Optional[Nasaq_integrations]:
     res = await db.execute(select(Nasaq_integrations).where(
         Nasaq_integrations.user_id == user_id, Nasaq_integrations.provider == "wa"))
@@ -163,9 +167,35 @@ async def get_settings(request: Request, user: UserResponse = Depends(get_curren
         return {"connected": False}
     if not row.verify_token:
         row.verify_token = secrets.token_urlsafe(18)
-    data = {"connected": True, "auto_reply": bool(row.auto_reply), "verify_token": row.verify_token}
+    res = await db.execute(select(Nasaq_wa_messages).where(
+        Nasaq_wa_messages.user_id == user.id, Nasaq_wa_messages.direction == "in").order_by(Nasaq_wa_messages.id.desc()).limit(1))
+    last = res.scalars().first()
+    data = {"connected": True, "auto_reply": bool(row.auto_reply), "verify_token": row.verify_token,
+            "last_in": ({"text": last.text, "at": last.created_at.isoformat() if last.created_at else None} if last else None)}
     await db.commit()
     return data
+
+
+@router.post("/subscribe")
+async def subscribe_app(body: SubscribeRequest, user: UserResponse = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Subscribes the Meta app to the WABA so message webhooks are actually delivered."""
+    row = await _wa_row(db, user.id)
+    if not row:
+        raise HTTPException(status_code=404, detail="اربط واتساب أولًا")
+    token = row.access_token
+    await db.commit()
+    waba = body.waba_id.strip()
+    if not waba.isdigit():
+        raise HTTPException(status_code=400, detail="أدخل WhatsApp Business Account ID (أرقام فقط)")
+    async with httpx.AsyncClient(timeout=20) as http:
+        r = await http.post(f"{GRAPH}/{waba}/subscribed_apps", headers={"Authorization": f"Bearer {token}"})
+        g = await http.get(f"{GRAPH}/{waba}/subscribed_apps", headers={"Authorization": f"Bearer {token}"})
+    body_r = r.json() if r.content else {}
+    if r.status_code != 200 or not body_r.get("success"):
+        msg = (body_r.get("error") or {}).get("message", "") if isinstance(body_r, dict) else ""
+        raise HTTPException(status_code=502, detail=f"رفضت Meta الاشتراك: {msg}")
+    apps = [(a.get("whatsapp_business_api_data") or {}).get("name", "") for a in (g.json() or {}).get("data", [])] if g.status_code == 200 else []
+    return {"ok": True, "apps": apps}
 
 
 @router.put("/settings")

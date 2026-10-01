@@ -719,9 +719,17 @@
           sub:'انسخ القيمتين للوحة Meta: WhatsApp ← Configuration ← Webhook، ثم اشترك بحقل messages.',
           body:`<div class="field"><label>Callback URL</label><div class="row"><input class="input" id="wHook" value="${hook}" dir="ltr" readonly><button class="btn btn-outline" data-cp="wHook">نسخ</button></div></div>
             <div class="field"><label>Verify token</label><div class="row"><input class="input" id="wTok" value="${cfg.verify_token}" dir="ltr" readonly><button class="btn btn-outline" data-cp="wTok">نسخ</button></div></div>
+            <div class="brand-note" style="margin:8px 0">${cfg.last_in ? `✅ آخر رسالة وصلت للخادم: «${esc(cfg.last_in.text)}» — ${cfg.last_in.at ? new Date(cfg.last_in.at).toLocaleString('ar') : ''}` : '⚠️ لسا ما وصلت ولا رسالة للخادم من Meta — فعّل الاشتراك تحت.'}</div>
+            <div class="field"><label>WhatsApp Business Account ID (من API Setup)</label><div class="row"><input class="input" id="wWaba" dir="ltr" placeholder="1205615902642519"><button class="btn btn-navy" id="wSub">تفعيل استقبال الرسائل</button></div></div>
             <label class="row" style="gap:10px;margin-top:8px;font-weight:700"><input type="checkbox" id="wAuto" ${cfg.auto_reply ? 'checked' : ''}> رد تلقائي بالـ AI على كل رسالة واردة</label>`,
           foot:`<button class="btn btn-ghost" data-close>إغلاق</button><button class="btn btn-gold" id="wSave">حفظ</button>`,
           onMount:m => {
+            m.querySelector('#wSub').onclick = async e => {
+              const b = e.currentTarget; b.disabled = true;
+              try { const r = await Auth.api('/api/v1/wa/subscribe', 'POST', { waba_id:m.querySelector('#wWaba').value }); App.toast(`تم الاشتراك ✅ ${r.apps.join('، ')} — ابعت رسالة جديدة وجرّب`, 'success', 7000); }
+              catch (err){ App.toast(err.message || 'تعذّر الاشتراك', 'error', 7000); }
+              b.disabled = false;
+            };
             m.querySelectorAll('[data-cp]').forEach(b => b.onclick = () => U.copy(m.querySelector('#' + b.dataset.cp).value));
             m.querySelector('#wSave').onclick = async () => {
               try { const r = await Auth.api('/api/v1/wa/settings', 'PUT', { auto_reply:m.querySelector('#wAuto').checked }); App.closeModal(); App.toast(r.auto_reply ? 'الرد التلقائي شغّال 🤖' : 'الرد التلقائي موقوف', 'success'); }
