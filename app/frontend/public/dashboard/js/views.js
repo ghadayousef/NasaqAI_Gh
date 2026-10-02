@@ -11,7 +11,19 @@
   function on(root, ev, sel, fn){ root.addEventListener(ev, e => { const t = e.target.closest(sel); if (t && root.contains(t)) fn(t, e); }); }
   App.on = on;
 
+  const ZONE = { 'top-right':'top:4%;right:4%' };
+  /* Real AI media + real logo composited in the quiet corner + Arabic copy typeset in Cairo. */
+  function mediaHTML(o){
+    const c = App.company, k = o.media.composite || {};
+    const ar = String(k.ratio || '1:1').replace(':', '/');
+    const logo = c.logo ? `<img src="${c.logo}" alt="" style="position:absolute;${ZONE['top-right']};width:${(k.logo_max_width_ratio || .16) * 100}%;object-fit:contain">` : `<span class="d-brand" style="position:absolute;${ZONE['top-right']}"><span>${c.initial}</span>${esc(c.name)}</span>`;
+    const pic = o.media.video_url ? `<video src="${o.media.video_url}" controls loop playsinline style="width:100%;height:100%;object-fit:cover"></video>` : `<img src="${o.media.image_url}" alt="${esc(o.title)}" style="width:100%;height:100%;object-fit:cover">`;
+    return `<div style="position:relative;aspect-ratio:${ar};overflow:hidden;border-radius:14px;font-family:Cairo,sans-serif">${pic}${logo}
+      ${o.media.video_url ? '' : `<div style="position:absolute;inset:auto 0 0 0;padding:14px 16px;background:${k.plate || '#f7f4ee'}e6;color:${k.heading_color || '#1c2521'}"><div style="font-weight:900;font-size:20px">${esc(o.title)}</div>${o.sub ? `<div style="font-size:13px">${esc(o.sub)}</div>` : ''}<span style="display:inline-block;margin-top:8px;padding:6px 14px;border-radius:999px;background:${k.button_color || '#14283e'};color:#fff;font-weight:800;font-size:13px">${esc(o.cta || 'اطلب هلأ')}</span></div>`}</div>`;
+  }
+
   function designHTML(o){
+    if (o.media) return mediaHTML(o);
     const c = App.company;
     return `<div class="design" style="background:${o.grad}">
       <div class="blob" style="width:200px;height:200px;background:rgba(255,255,255,.1);top:-60px;left:-50px"></div>
@@ -321,6 +333,7 @@
         <div class="hashtags">${o.tags.map(t => `<span>${esc(t)}</span>`).join('')}</div>
         <div class="out-actions">
           <button class="btn btn-navy btn-sm" data-o="schedule">${icon('i-cal', 'icon-sm')}جدولة</button>
+          <button class="btn btn-gold btn-sm" data-o="media">${icon('i-spark', 'icon-sm')}${o.media ? 'أعد التصميم' : (['ريلز','فيديو'].includes(o.format) ? 'فيديو بالـ AI' : 'صورة بالـ AI')}</button>
           <button class="btn btn-outline btn-sm" data-o="copy">${icon('i-copy', 'icon-sm')}نسخ</button>
           <button class="btn btn-outline btn-sm" data-o="draft">${icon('i-file', 'icon-sm')}حفظ كمسودة</button>
           <button class="btn btn-outline btn-sm" data-o="campaign">${icon('i-mega', 'icon-sm')}حوّل لإعلان</button>
@@ -483,6 +496,21 @@
         const card = b.closest('[data-oid]'), o = S.outputs.find(x => x.id === +card.dataset.oid);
         const asContent = () => ({ id:o.id, title:o.title, caption:o.cap, platform:o.platform, format:o.format, status:'draft', at:null, grad:o.grad, emoji:o.emoji, reach:0 });
         if (act === 'copy') U.copy(o.cap + '\n\n' + o.tags.join(' '));
+        if (act === 'media'){
+          const label = b.innerHTML; b.disabled = true; b.textContent = ['ريلز','فيديو'].includes(o.format) ? 'جارٍ تصوير الفيديو… (دقيقة أو أكثر)' : 'جارٍ تصميم الصورة…';
+          const B = D.brand || {};
+          window.NasaqAuth.api('/generate'.replace('generate', 'media'), 'POST', {
+            brief:{ type:o.format, platform:o.platform, ratio:S.size, style:S.style, lang:S.lang, subject:S.product || o.title, audience:S.audience, tone:S.tone },
+            brand:{ colors:B.colors, persona:B.persona, audience:B.audience, products:B.products, tone:App.company.tone, fonts:B.fonts }
+          }).then(r => {
+            o.media = { image_url:r.image_url, video_url:r.video_url, composite:r.composite };
+            D.setUsage && D.setUsage(r.usage);
+            card.querySelector('.design, [style*="aspect-ratio"]').outerHTML = mediaHTML(o);
+            App.toast('جهز التصميم بهوية علامتك ✨', 'ai');
+          }).catch(err => App.toast(err.message && err.message !== 'REQUEST_FAILED' ? err.message : 'تعذّر توليد التصميم', 'error'))
+            .finally(() => { b.disabled = false; b.innerHTML = label; });
+          return;
+        }
         if (act === 'download') App.toast('تم تحميل التصميم ⬇️', 'success');
         if (act === 'draft'){
           if (!D.content.find(c => c.id === o.id)){ D.content.unshift(asContent()); App.toast('انحفظ كمسودة — تلاقيه بجدولة النشر', 'success'); }

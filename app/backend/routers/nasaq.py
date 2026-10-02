@@ -18,6 +18,9 @@ from models.nasaq_payments import Nasaq_payments
 from models.nasaq_workspaces import Nasaq_workspaces
 from schemas.auth import UserResponse
 from services import nasaq_core as core
+from prompts.brand_media import build as build_media
+from schemas.aihub import GenImgRequest, GenVideoRequest
+from services.aihub import AIHubService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/nasaq", tags=["nasaq"])
@@ -41,6 +44,14 @@ class WorkspaceBody(BaseModel):
 class GenerateRequest(BaseModel):
     count: int = Field(3, ge=1, le=6)
     brief: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MediaRequest(BaseModel):
+    brief: Dict[str, Any] = Field(default_factory=dict)
+    brand: Dict[str, Any] = Field(default_factory=dict)
+
+
+IMG_SIZES = {"1:1": "1024x1024", "4:5": "1024x1536", "9:16": "1024x1536", "16:9": "1536x1024"}
 
 
 class IntegrationRequest(BaseModel):
@@ -314,3 +325,49 @@ async def verify_payment(body: VerifyRequest, user: UserResponse = Depends(get_c
     await db.commit()
     state = await _state(db, user)
     return {"status": status, "payment_status": session.payment_status, **state}
+
+
+@router.post("/media")
+async def generate_media(body: MediaRequest, user: UserResponse = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Brand-faithful visual via prompts/brand_media.build; counts as one generation."""
+    profile = await core.get_or_create_profile(db, user)
+    plan = core.effective_plan(profile)
+    limit = core.PLAN_GENS.get(plan)
+    usage = await core.get_or_create_usage(db, user.id)
+    if limit is not None and (usage.gens or 0) >= limit:
+        await db.commit()
+        raise HTTPException(status_code=402, detail="خلصت توليدات باقتك لهذا الشهر — رقِّ خطتك من الفوترة")
+    usage.gens = (usage.gens or 0) + 1
+    usage_id = usage.id
+    try:
+        saved_brand = json.loads(profile.brand_json or "{}")
+    except json.JSONDecodeError:
+        saved_brand = {}
+    brand = {**saved_brand, **{k: v for k, v in body.brand.items() if v}}
+    brand.update({"name": profile.company, "industry": profile.industry, "city": profile.city or brand.get("city", "")})
+    await db.commit()
+
+    job = build_media(brand, body.brief)
+    comp = job["composite"]
+    prompt = f"{job['image_prompt']}\n\nAVOID: {job['negative']}"
+    service = AIHubService()
+    try:
+        if comp["kind"] == "video":
+            res = await service.genvideo(GenVideoRequest(prompt=prompt, model="seedance-2.0-fast"))
+            media = {"video_url": res.url}
+        else:
+            res = await service.genimg(GenImgRequest(prompt=prompt, model="gpt-image-2",
+                                                     size=IMG_SIZES.get(comp["ratio"], "1024x1024")))
+            media = {"image_url": res.images[0]}
+    except Exception as exc:
+        logger.error("media generation failed: %s", exc)
+        refund = await db.get(core.Nasaq_usage, usage_id)
+        if refund:
+            refund.gens = max(0, (refund.gens or 0) - 1)
+        await db.commit()
+        raise HTTPException(status_code=502, detail="تعذّر توليد التصميم، جرّب مرة ثانية")
+    final = await db.get(core.Nasaq_usage, usage_id)
+    payload = core.usage_payload(final, plan)
+    await db.commit()
+    comp.pop("logo_file", None)
+    return {**media, "composite": comp, "usage": payload}
