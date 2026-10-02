@@ -19,7 +19,7 @@ from models.nasaq_workspaces import Nasaq_workspaces
 from schemas.auth import UserResponse
 from services import nasaq_core as core
 from prompts.brand_media import build as build_media
-from schemas.aihub import GenImgRequest, GenVideoRequest
+from schemas.aihub import ChatMessage, GenImgRequest, GenTxtRequest, GenVideoRequest
 from services.aihub import AIHubService
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,10 @@ class WorkspaceBody(BaseModel):
 class GenerateRequest(BaseModel):
     count: int = Field(3, ge=1, le=6)
     brief: Dict[str, Any] = Field(default_factory=dict)
+
+
+class StudyRequest(BaseModel):
+    logo: str
 
 
 class MediaRequest(BaseModel):
@@ -349,8 +353,9 @@ async def generate_media(body: MediaRequest, user: UserResponse = Depends(get_cu
 
     job = build_media(brand, body.brief)
     comp = job["composite"]
-    prompt = f"{job['image_prompt']}\n\nAVOID: {job['negative']}"
     service = AIHubService()
+    concept = await _creative_concept(service, job["image_prompt"], comp["kind"])
+    prompt = f"{job['image_prompt']}\n\nCREATIVE CONCEPT (follow exactly, keep all rules above):\n{concept}\n\nAVOID: {job['negative']}"
     try:
         if comp["kind"] == "video":
             res = await service.genvideo(GenVideoRequest(prompt=prompt, model="seedance-2.0-fast"))
@@ -371,3 +376,59 @@ async def generate_media(body: MediaRequest, user: UserResponse = Depends(get_cu
     await db.commit()
     comp.pop("logo_file", None)
     return {**media, "composite": comp, "usage": payload}
+
+
+ROLES = ["أساسي", "مميّز", "خلفية", "ثانوي", "نصوص"]
+
+
+async def _creative_concept(service: AIHubService, brief_prompt: str, kind: str) -> str:
+    """Art-director pass: invents one bold, specific, on-brand scene so results are never generic."""
+    system = ("You are an award-winning creative director for premium social ads (Cannes Lions level). "
+              "Read the brief and invent ONE striking, original concept that still obeys every rule in it. "
+              "Be concrete: hero subject and styling, set & props local to the city, camera lens/angle, lighting setup, "
+              "composition with the quiet logo corner and empty text area, and how the exact palette hex colors appear "
+              "(backdrop, props, light gels). Avoid clichés and stock-photo looks. "
+              + ("For video, give a shot list with timings and camera moves. " if kind == "video" else "")
+              + "Write 90-140 words in English, no preamble, no letters/text in the picture.")
+    try:
+        res = await service.gentxt(GenTxtRequest(messages=[ChatMessage(role="system", content=system),
+                                                           ChatMessage(role="user", content=brief_prompt)],
+                                                 model="claude-opus-4.6"))
+        return (res.content or "").strip()[:1500]
+    except Exception as exc:
+        logger.warning("concept step failed: %s", exc)
+        return "Bold editorial hero shot, dramatic soft key light, palette-graded set, generous negative space."
+
+
+@router.post("/brand/study")
+async def study_logo(body: StudyRequest, user: UserResponse = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Reads the real logo with a vision model and extracts the brand palette and personality."""
+    if not body.logo.startswith(("data:image", "http")):
+        raise HTTPException(status_code=400, detail="ارفع الشعار أولًا")
+    prompt = ("حلّل هذا الشعار كمصمم هوية بصرية. استخرج لوحة ألوان من 5 ألوان مأخوذة من الشعار نفسه "
+              "(ولون خلفية فاتح متناسق، ولون نصوص غامق مقروء). أعد JSON فقط: "
+              '{"colors":[{"role":"أساسي","name":"اسم عربي","hex":"#RRGGBB"},{"role":"مميّز",...},{"role":"خلفية",...},'
+              '{"role":"ثانوي",...},{"role":"نصوص",...}],"persona":["3 صفات عربية قصيرة"]}')
+    service = AIHubService()
+    res = await service.gentxt(GenTxtRequest(model="gemini-3.1-pro-preview", messages=[ChatMessage(role="user", content=[
+        {"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": body.logo}}])]))
+    try:
+        data = json.loads(core._extract_json(res.content or ""))
+        colors = [c for c in data.get("colors", []) if isinstance(c, dict) and str(c.get("hex", "")).startswith("#")]
+        if len(colors) < 3:
+            raise ValueError
+    except (ValueError, json.JSONDecodeError):
+        raise HTTPException(status_code=502, detail="ما قدرنا نقرأ ألوان الشعار، جرّب صورة أوضح")
+    for i, c in enumerate(colors[:5]):
+        c["role"] = c.get("role") if c.get("role") in ROLES else ROLES[i]
+        c["hex"] = c["hex"][:7]
+    persona = [str(x)[:20] for x in (data.get("persona") or [])][:4]
+    profile = await core.get_or_create_profile(db, user)
+    try:
+        brand = json.loads(profile.brand_json or "{}")
+    except json.JSONDecodeError:
+        brand = {}
+    brand.update({"colors": colors[:5], **({"persona": persona} if persona else {})})
+    profile.brand_json = json.dumps(brand, ensure_ascii=False)
+    await db.commit()
+    return {"colors": colors[:5], "persona": persona}

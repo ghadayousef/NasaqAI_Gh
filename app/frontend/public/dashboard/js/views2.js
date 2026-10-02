@@ -314,10 +314,20 @@
           App.toast('تم تحديث بيانات الهوية بنجاح', 'success');
         }
         if (a === 'study'){
+          const logo = App.company.logo || BR.logo;
+          if (!logo){ App.toast('ارفع الشعار أولًا حتى ندرس ألوانه', 'error'); return; }
           BR.studying = true; b.disabled = true; b.innerHTML = `${icon('i-refresh', 'icon-sm spin')}جارٍ الدراسة…`;
-          el.querySelectorAll('.swatch').forEach((s, i) => { s.style.transition = '.4s'; s.style.opacity = .3; setTimeout(() => s.style.opacity = 1, 900 + i * 180); });
-          const t = setTimeout(() => { BR.studying = false; b.disabled = false; b.innerHTML = `${icon('i-wand', 'icon-sm')}ادرس الشعار بالـ AI`; App.toast('تمت دراسة الشعار واستخراج هويتك البصرية 🎨', 'ai'); }, 1900);
-          App.onLeave(() => { clearTimeout(t); BR.studying = false; });
+          el.querySelectorAll('.swatch').forEach(s => { s.style.transition = '.4s'; s.style.opacity = .3; });
+          window.NasaqAuth.api('/brand/study', 'POST', { logo }).then(r => {
+            D.brand.colors = r.colors;
+            if (r.persona && r.persona.length) D.brand.persona = r.persona;
+            const u = window.NasaqAuth.current() || {};
+            if (u.brand){ u.brand.colors = r.colors; if (r.persona.length) u.brand.persona = r.persona; }
+            D.persistWorkspace && D.persistWorkspace();
+            App.toast('استخرجنا ألوان شعارك الحقيقية — كل التصاميم رح تمشي عليها 🎨', 'ai');
+            App.rerender();
+          }).catch(err => { el.querySelectorAll('.swatch').forEach(s => s.style.opacity = 1); App.toast(err.message || 'تعذّرت دراسة الشعار', 'error'); })
+            .finally(() => { BR.studying = false; b.disabled = false; b.innerHTML = `${icon('i-wand', 'icon-sm')}ادرس الشعار بالـ AI`; });
         }
         if (a === 'persona'){
           App.modal({ title:'إضافة صفة للبراند', body:`<div class="field"><input class="input" id="pIn" placeholder="مثال: عصري"></div>`, foot:`<button class="btn btn-ghost" data-close>إلغاء</button><button class="btn btn-navy" id="pOk">إضافة</button>`,

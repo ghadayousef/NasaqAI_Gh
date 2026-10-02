@@ -22,6 +22,29 @@
       ${o.media.video_url ? '' : `<div style="position:absolute;inset:auto 0 0 0;padding:14px 16px;background:${k.plate || '#f7f4ee'}e6;color:${k.heading_color || '#1c2521'}"><div style="font-weight:900;font-size:20px">${esc(o.title)}</div>${o.sub ? `<div style="font-size:13px">${esc(o.sub)}</div>` : ''}<span style="display:inline-block;margin-top:8px;padding:6px 14px;border-radius:999px;background:${k.button_color || '#14283e'};color:#fff;font-weight:800;font-size:13px">${esc(o.cta || 'اطلب هلأ')}</span></div>`}</div>`;
   }
 
+  const loadImg = src => new Promise((ok, bad) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = bad; i.src = src; });
+  /* Bakes scene + real logo + Cairo Arabic copy into one PNG ready to publish. */
+  async function exportDesign(o){
+    const k = o.media.composite || {}, c = App.company;
+    const [rw, rh] = String(k.ratio || '1:1').split(':').map(Number);
+    const W = 1080, H = Math.round(W * rh / rw);
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const x = cv.getContext('2d');
+    const img = await loadImg(o.media.image_url);
+    const sc = Math.max(W / img.width, H / img.height);
+    x.drawImage(img, (W - img.width * sc) / 2, (H - img.height * sc) / 2, img.width * sc, img.height * sc);
+    if (c.logo){ const lg = await loadImg(c.logo); const lw = W * (k.logo_max_width_ratio || .16), lh = lw * lg.height / lg.width; x.drawImage(lg, W - lw - W * .04, H * .04, lw, lh); }
+    await document.fonts.load('900 60px Cairo');
+    const band = H * .26; x.globalAlpha = .92; x.fillStyle = k.plate || '#f7f4ee'; x.fillRect(0, H - band, W, band); x.globalAlpha = 1;
+    x.direction = 'rtl'; x.textAlign = 'right'; x.fillStyle = k.heading_color || '#1c2521';
+    x.font = '900 64px Cairo'; x.fillText(o.title, W - 60, H - band + 90, W - 120);
+    if (o.sub){ x.font = '600 34px Cairo'; x.fillText(o.sub, W - 60, H - band + 145, W - 120); }
+    x.font = '800 32px Cairo'; const cta = o.cta || 'اطلب هلأ', tw = x.measureText(cta).width + 70;
+    x.fillStyle = k.button_color || '#14283e'; x.beginPath(); x.roundRect(W - 60 - tw, H - 95, tw, 62, 31); x.fill();
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.fillText(cta, W - 60 - tw / 2, H - 52);
+    const a = document.createElement('a'); a.download = `nasaq-${o.id}.png`; a.href = cv.toDataURL('image/png'); a.click();
+  }
+
   function designHTML(o){
     if (o.media) return mediaHTML(o);
     const c = App.company;
@@ -334,6 +357,7 @@
         <div class="out-actions">
           <button class="btn btn-navy btn-sm" data-o="schedule">${icon('i-cal', 'icon-sm')}جدولة</button>
           <button class="btn btn-gold btn-sm" data-o="media">${icon('i-spark', 'icon-sm')}${o.media ? 'أعد التصميم' : (['ريلز','فيديو'].includes(o.format) ? 'فيديو بالـ AI' : 'صورة بالـ AI')}</button>
+          ${o.media && o.media.image_url ? `<button class="btn btn-outline btn-sm" data-o="download">${icon('i-download', 'icon-sm')}تحميل</button>` : ''}${o.media && o.media.video_url ? `<a class="btn btn-outline btn-sm" href="${o.media.video_url}" target="_blank" download>تحميل الفيديو</a>` : ''}
           <button class="btn btn-outline btn-sm" data-o="copy">${icon('i-copy', 'icon-sm')}نسخ</button>
           <button class="btn btn-outline btn-sm" data-o="draft">${icon('i-file', 'icon-sm')}حفظ كمسودة</button>
           <button class="btn btn-outline btn-sm" data-o="campaign">${icon('i-mega', 'icon-sm')}حوّل لإعلان</button>
@@ -496,6 +520,7 @@
         const card = b.closest('[data-oid]'), o = S.outputs.find(x => x.id === +card.dataset.oid);
         const asContent = () => ({ id:o.id, title:o.title, caption:o.cap, platform:o.platform, format:o.format, status:'draft', at:null, grad:o.grad, emoji:o.emoji, reach:0 });
         if (act === 'copy') U.copy(o.cap + '\n\n' + o.tags.join(' '));
+        if (act === 'download'){ exportDesign(o).catch(() => App.toast('تعذّر تجهيز الملف', 'error')); return; }
         if (act === 'media'){
           const label = b.innerHTML; b.disabled = true; b.textContent = ['ريلز','فيديو'].includes(o.format) ? 'جارٍ تصوير الفيديو… (دقيقة أو أكثر)' : 'جارٍ تصميم الصورة…';
           const B = D.brand || {};
@@ -505,7 +530,8 @@
           }).then(r => {
             o.media = { image_url:r.image_url, video_url:r.video_url, composite:r.composite };
             D.setUsage && D.setUsage(r.usage);
-            card.querySelector('.design, [style*="aspect-ratio"]').outerHTML = mediaHTML(o);
+            card.outerHTML = outCard(o, 0);
+            const fresh = el.querySelector(`[data-oid="${o.id}"] [data-cap]`); if (fresh) fresh.textContent = o.cap;
             App.toast('جهز التصميم بهوية علامتك ✨', 'ai');
           }).catch(err => App.toast(err.message && err.message !== 'REQUEST_FAILED' ? err.message : 'تعذّر توليد التصميم', 'error'))
             .finally(() => { b.disabled = false; b.innerHTML = label; });
